@@ -17,10 +17,8 @@ from typing import Any, Dict, List
 
 import httpx
 from fastapi import FastAPI, HTTPException
-
-from models import AnswerRequest, AnswerResponse
-from upstream import call_upstream
-
+from coordinator.models import AnswerRequest, AnswerResponse
+from .upstream import call_upstream
 logger = logging.getLogger("coordinator.main")
 
 app = FastAPI(title="Stretch Thu — Multi-Service Coordinator")
