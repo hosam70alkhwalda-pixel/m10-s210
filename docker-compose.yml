@@ -1,21 +1,111 @@
 # Stretch Thu — 5-service coordinator stack (graded deliverable).
 #
-# The 5 microservices are: coordinator, classifier_svc, nlp_svc,
-# kg_svc, rag_svc. Healthcheck on every service; coordinator
-# depends_on the classifier and the three backends with
-# `condition: service_healthy` (bare depends_on lists wait only
-# for container start, not ready).
-#
-# Optional persistence tier: if your kg_svc and rag_svc wire to
-# real Neo4j and Weaviate backends, add them here too — the
-# resulting topology is 7 services. The graded deliverable is the
-# 5-service stack; the persistence tier is optional and reused
-# from the Integration when needed.
-#
-# TODO (learner): author this file.
-# - services: coordinator, classifier_svc, nlp_svc, kg_svc, rag_svc.
-# - Each service has /healthz and a healthcheck.
-# - coordinator depends on all four downstream services with
-#   condition: service_healthy.
+# Services: coordinator, classifier_svc, nlp_svc, kg_svc, rag_svc.
+# Every backend exposes /healthz; the coordinator only starts
+# routing once the classifier AND all three backends report
+# healthy (condition: service_healthy — NOT a bare depends_on list,
+# which only waits for container start).
 
-services: {}
+networks:
+  coordinator-net:
+    driver: bridge
+
+services:
+  nlp_svc:
+    build:
+      context: ./services/nlp_svc
+      dockerfile: Dockerfile
+    container_name: nlp_svc
+    networks:
+      - coordinator-net
+    ports:
+      - "8011:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8001/healthz', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  kg_svc:
+    build:
+      context: ./services/kg_svc
+      dockerfile: Dockerfile
+    container_name: kg_svc
+    networks:
+      - coordinator-net
+    ports:
+      - "8012:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8001/healthz', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  rag_svc:
+    build:
+      context: ./services/rag_svc
+      dockerfile: Dockerfile
+    container_name: rag_svc
+    networks:
+      - coordinator-net
+    ports:
+      - "8013:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8001/healthz', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 8
+      start_period: 15s   # generation backend — slower cold start
+    restart: unless-stopped
+
+  classifier_svc:
+    build:
+      context: ./services/classifier_svc
+      dockerfile: Dockerfile
+    container_name: classifier_svc
+    networks:
+      - coordinator-net
+    ports:
+      - "8014:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8001/healthz', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  coordinator:
+    build:
+      context: ./coordinator
+      dockerfile: Dockerfile
+    container_name: coordinator
+    networks:
+      - coordinator-net
+    ports:
+      - "8000:8000"
+    environment:
+      CLASSIFIER_URL: "http://classifier_svc:8001/classify"
+      NLP_SVC_URL: "http://nlp_svc:8001/extract"
+      KG_SVC_URL: "http://kg_svc:8001/kg/query"
+      RAG_SVC_URL: "http://rag_svc:8001/rag/answer"
+    depends_on:
+      classifier_svc:
+        condition: service_healthy
+      nlp_svc:
+        condition: service_healthy
+      kg_svc:
+        condition: service_healthy
+      rag_svc:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/healthz', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
